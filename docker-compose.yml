@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: pyramid-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pyramidadmin
+      POSTGRES_PASSWORD: pyramid123
+      POSTGRES_DB: pyramid
+    ports:
+      - "5432:5432"
+    volumes:
+      - pyramid_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pyramidadmin -d pyramid"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pyramid_pgdata:

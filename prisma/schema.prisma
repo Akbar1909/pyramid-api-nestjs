@@ -1,0 +1,283 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Application roles. Staff vs applicant/student is enforced in app rules, not in this enum.
+/// PostgreSQL enum type name is snake_case (`user_role`), not `Role`.
+enum Role {
+  ADMIN
+  CONTENT_MANAGER
+  APPLICANT
+  STUDENT
+
+  @@map("user_role")
+}
+
+/// Auth identity + `role`. Every user has exactly one `Profile` (shared contact fields for all roles).
+model User {
+  id           String   @id @default(cuid()) @map("id")
+  email        String   @unique @map("email")
+  passwordHash String   @map("password_hash")
+  role         Role     @default(APPLICANT) @map("role")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  profile      Profile?
+  authoredEvents Event[]
+  authoredNews   News[]
+  uploadedFiles  StoredFile[]
+
+  @@map("users")
+}
+
+/// Public “apply now” submissions (website → admissions review).
+enum ProgramApplicationStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+
+  @@map("program_application_status")
+}
+
+/// Metadata for a binary stored on disk (see `FilesService`).
+model StoredFile {
+  id             String   @id @default(cuid()) @map("id")
+  filename       String   @unique @map("filename")
+  originalName   String?  @map("original_name")
+  url            String   @map("url")
+  mimeType       String   @map("mime_type")
+  sizeBytes      Int      @map("size_bytes")
+  /// Null when the file was uploaded anonymously (e.g. public apply form).
+  uploadedById   String?  @map("uploaded_by_id")
+  uploadedBy     User?    @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  createdAt      DateTime @default(now()) @map("created_at")
+  eventThumbnails Event[] @relation("EventThumbnail")
+  newsThumbnails  News[]  @relation("NewsThumbnail")
+  careerQuizQuestionImages CareerQuizQuestion[] @relation("CareerQuizQuestionImage")
+  programApplicationAttachments ProgramApplicationAttachment[]
+
+  @@map("stored_files")
+}
+
+/// Campus / academic calendar events (admin-managed).
+model Event {
+  id          String    @id @default(cuid()) @map("id")
+  title       String    @map("title")
+  slug        String?   @unique @map("slug")
+  body        String    @map("body") @db.Text
+  startsAt    DateTime  @map("starts_at")
+  endsAt      DateTime? @map("ends_at")
+  location    String?   @map("location")
+  /// When set and not in the future, the event is visible to anonymous list/detail.
+  publishedAt DateTime? @map("published_at")
+  authorId    String    @map("author_id")
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  thumbnailId String?   @map("thumbnail_id")
+  thumbnail   StoredFile? @relation("EventThumbnail", fields: [thumbnailId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("events")
+}
+
+/// News articles (admin-managed).
+model News {
+  id          String    @id @default(cuid()) @map("id")
+  title       String    @map("title")
+  slug        String?   @unique @map("slug")
+  body        String    @map("body") @db.Text
+  publishedAt DateTime? @map("published_at")
+  authorId    String    @map("author_id")
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  thumbnailId String?   @map("thumbnail_id")
+  thumbnail   StoredFile? @relation("NewsThumbnail", fields: [thumbnailId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("news")
+}
+
+/// Shared personal fields for **every** role (staff + applicant + student).
+/// Applicant-only and student-only data live in `ApplicantProfile` and `StudentProfile`.
+model Profile {
+  id        String   @id @default(cuid()) @map("id")
+  userId    String   @unique @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
+  phone     String?  @map("phone")
+  avatarUrl String?  @map("avatar_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  applicant ApplicantProfile?
+  student   StudentProfile?
+
+  @@map("profiles")
+}
+
+/// Fields only meaningful for `Role.APPLICANT`. Staff never have this row.
+model ApplicantProfile {
+  id        String   @id @default(cuid()) @map("id")
+  profileId String   @unique @map("profile_id")
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  intendedProgram  String? @map("intended_program")
+  highestEducation String? @map("highest_education")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("applicant_profiles")
+}
+
+/// Fields only meaningful for `Role.STUDENT`. Created when a user becomes a student (row may coexist with `ApplicantProfile` history).
+model StudentProfile {
+  id        String   @id @default(cuid()) @map("id")
+  profileId String   @unique @map("profile_id")
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  studentNumber String?   @unique @map("student_number")
+  enrolledAt    DateTime? @map("enrolled_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("student_profiles")
+}
+
+/// Public "book a campus tour" requests (submitted from the website; managed in admin).
+enum TourBookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+
+  @@map("tour_booking_status")
+}
+
+model TourBooking {
+  id         String              @id @default(cuid()) @map("id")
+  fullName   String              @map("full_name")
+  email      String              @map("email")
+  phone      String              @map("phone")
+  /// Department or subject area (e.g. Business Administration) — free text from public form.
+  department String              @map("department")
+  /// Combined visit date and time slot in UTC.
+  visitAt    DateTime            @map("visit_at")
+  status     TourBookingStatus   @default(PENDING) @map("status")
+  adminNotes String?             @map("admin_notes") @db.Text
+  createdAt  DateTime            @default(now()) @map("created_at")
+  updatedAt  DateTime            @updatedAt @map("updated_at")
+
+  @@index([visitAt])
+  @@index([status])
+  @@index([createdAt])
+  @@map("tour_bookings")
+}
+
+/// Multi-step career assessment (admin-managed questions and options).
+model CareerQuiz {
+  id                String   @id @default(cuid()) @map("id")
+  title             String   @map("title")
+  description       String?  @map("description") @db.Text
+  /// When set, public UI can show “Step X of N”; otherwise N can equal question count.
+  displayTotalSteps Int?     @map("display_total_steps")
+  isPublished       Boolean  @default(false) @map("is_published")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  questions         CareerQuizQuestion[]
+
+  @@map("career_quizzes")
+}
+
+model CareerQuizQuestion {
+  id            String   @id @default(cuid()) @map("id")
+  quizId        String   @map("quiz_id")
+  quiz          CareerQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  /// 1-based step index shown as “STEP 04”.
+  stepOrder     Int      @map("step_order")
+  categoryLabel String   @map("category_label")
+  questionText  String   @map("question_text") @db.Text
+  imageFileId   String?  @map("image_file_id")
+  imageFile     StoredFile? @relation("CareerQuizQuestionImage", fields: [imageFileId], references: [id], onDelete: SetNull)
+  quoteText     String?  @map("quote_text") @db.Text
+  quoteIconKey  String?  @map("quote_icon_key")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  options       CareerQuizOption[]
+
+  @@unique([quizId, stepOrder])
+  @@index([quizId])
+  @@map("career_quiz_questions")
+}
+
+model CareerQuizOption {
+  id          String   @id @default(cuid()) @map("id")
+  questionId  String   @map("question_id")
+  question    CareerQuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  label       String   @map("label")
+  title       String   @map("title")
+  description String   @map("description") @db.Text
+  /// Exactly one option per question should be true (admin-only; omitted on public quiz payload).
+  isCorrect   Boolean  @default(false) @map("is_correct")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([questionId])
+  @@map("career_quiz_options")
+}
+
+/// Homepage “Our Specialized Faculty” cards (admin-managed).
+model FacultyProgram {
+  id          String   @id @default(cuid()) @map("id")
+  title       String   @map("title")
+  /// Short plain summary for homepage cards.
+  description String   @map("description") @db.Text
+  /// Optional rich HTML (TipTap) for longer faculty / program detail.
+  body        String?  @map("body") @db.Text
+  /// Preset used by the public site to render a gold icon (e.g. cardiac, cardiology).
+  iconKey     String   @map("icon_key") @db.VarChar(64)
+  sortOrder   Int      @default(0) @map("sort_order")
+  isPublished Boolean  @default(true) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  applications ProgramApplication[]
+
+  @@index([isPublished, sortOrder])
+  @@map("faculty_programs")
+}
+
+model ProgramApplication {
+  id               String                     @id @default(cuid()) @map("id")
+  firstName        String                     @map("first_name")
+  lastName         String                     @map("last_name")
+  email            String                     @map("email")
+  dateOfBirth      DateTime                   @map("date_of_birth")
+  citizenship      String                     @map("citizenship") @db.VarChar(32)
+  facultyProgramId String?                    @map("faculty_program_id")
+  facultyProgram   FacultyProgram?          @relation(fields: [facultyProgramId], references: [id], onDelete: SetNull)
+  status           ProgramApplicationStatus   @default(SUBMITTED) @map("status")
+  adminNotes       String?                    @map("admin_notes") @db.Text
+  createdAt        DateTime                   @default(now()) @map("created_at")
+  updatedAt        DateTime                   @updatedAt @map("updated_at")
+  attachments      ProgramApplicationAttachment[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([email])
+  @@map("program_applications")
+}
+
+model ProgramApplicationAttachment {
+  id             String              @id @default(cuid()) @map("id")
+  applicationId  String              @map("application_id")
+  application    ProgramApplication  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  storedFileId   String              @map("stored_file_id")
+  storedFile     StoredFile          @relation(fields: [storedFileId], references: [id], onDelete: Restrict)
+
+  @@index([applicationId])
+  @@map("program_application_attachments")
+}
