@@ -4,6 +4,7 @@ export const FACULTY_PROGRAM_ICON_KEYS = [
   'cardiology',
   'psw',
   'medical_admin',
+  'clinical_assistant',
   'science',
   'generic',
 ] as const;

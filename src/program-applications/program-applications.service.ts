@@ -4,11 +4,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ProgramApplicationStatus } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import type { Express } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { FilesService } from '../files/files.service';
 import { CreateProgramApplicationDto } from './dto/create-program-application.dto';
 import { UpdateProgramApplicationDto } from './dto/update-program-application.dto';
+import { PROGRAM_APPLICATION_DOCUMENT_TYPES } from './program-application-document-types';
 
 const MAX_APPLICATION_FILES = 15;
 
@@ -33,6 +35,13 @@ export class ProgramApplicationsService {
     }
     this.assertReasonableDob(dob);
 
+    const preferredStartDate = new Date(dto.preferredStartDate);
+    if (Number.isNaN(preferredStartDate.getTime())) {
+      throw new BadRequestException('Invalid preferred start date');
+    }
+
+    const documentTypes = this.resolveDocumentTypes(dto.documentTypes, list.length);
+
     let facultyProgramId: string | null = null;
     if (dto.facultyProgramId) {
       const fp = await this.prisma.facultyProgram.findFirst({
@@ -45,6 +54,7 @@ export class ProgramApplicationsService {
       facultyProgramId = fp.id;
     }
 
+    const trackingToken = randomBytes(24).toString('hex');
     const storedIds: string[] = [];
     try {
       for (const f of list) {
@@ -58,19 +68,28 @@ export class ProgramApplicationsService {
             firstName: dto.firstName.trim(),
             lastName: dto.lastName.trim(),
             email: dto.email.trim().toLowerCase(),
+            phone: dto.phone.trim(),
             dateOfBirth: dob,
             citizenship: dto.citizenship,
+            preferredStartDate,
+            supplementaryAnswers: dto.supplementaryAnswers ?? undefined,
             facultyProgramId,
             status: ProgramApplicationStatus.SUBMITTED,
+            trackingToken,
           },
         });
-        for (const storedFileId of storedIds) {
+        for (let i = 0; i < storedIds.length; i++) {
           await tx.programApplicationAttachment.create({
-            data: { applicationId: app.id, storedFileId },
+            data: {
+              applicationId: app.id,
+              storedFileId: storedIds[i],
+              documentType: documentTypes[i],
+            },
           });
         }
         return {
           id: app.id,
+          trackingToken: app.trackingToken,
           createdAt: app.createdAt,
         };
       });
@@ -82,35 +101,19 @@ export class ProgramApplicationsService {
     }
   }
 
-  findAllAdmin() {
-    return this.prisma.programApplication.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: {
-        facultyProgram: { select: { id: true, title: true } },
-        _count: { select: { attachments: true } },
-      },
-    });
-  }
-
-  async findOneAdmin(id: string) {
+  async findByTrackingToken(token: string) {
     const row = await this.prisma.programApplication.findUnique({
-      where: { id },
-      include: {
+      where: { trackingToken: token.trim() },
+      select: {
+        id: true,
+        status: true,
+        preferredStartDate: true,
+        interviewScheduledAt: true,
+        enrolledAt: true,
+        createdAt: true,
+        updatedAt: true,
         facultyProgram: {
-          select: { id: true, title: true, description: true, iconKey: true },
-        },
-        attachments: {
-          include: {
-            storedFile: {
-              select: {
-                id: true,
-                originalName: true,
-                mimeType: true,
-                sizeBytes: true,
-                createdAt: true,
-              },
-            },
-          },
+          select: { id: true, title: true, slug: true },
         },
       },
     });
@@ -120,37 +123,89 @@ export class ProgramApplicationsService {
     return row;
   }
 
+  findAllAdmin() {
+    return this.prisma.programApplication.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        facultyProgram: { select: { id: true, title: true, slug: true } },
+        _count: { select: { attachments: true } },
+      },
+    });
+  }
+
+  async findOneAdmin(id: string) {
+    const row = await this.prisma.programApplication.findUnique({
+      where: { id },
+      include: this.adminInclude(),
+    });
+    if (!row) {
+      throw new NotFoundException();
+    }
+    return row;
+  }
+
   async update(id: string, dto: UpdateProgramApplicationDto) {
     await this.findOneAdmin(id);
-    if (dto.status === undefined && dto.adminNotes === undefined) {
-      throw new BadRequestException('Provide at least one of status or adminNotes');
+    if (
+      dto.status === undefined &&
+      dto.adminNotes === undefined &&
+      dto.interviewScheduledAt === undefined &&
+      dto.interviewNotes === undefined &&
+      dto.enrolledAt === undefined
+    ) {
+      throw new BadRequestException('Provide at least one field to update');
     }
+
+    const data: {
+      status?: ProgramApplicationStatus;
+      adminNotes?: string | null;
+      interviewScheduledAt?: Date | null;
+      interviewNotes?: string | null;
+      enrolledAt?: Date | null;
+    } = {};
+
+    if (dto.status !== undefined) {
+      data.status = dto.status;
+      if (
+        dto.status === ProgramApplicationStatus.ENROLLED &&
+        dto.enrolledAt === undefined
+      ) {
+        data.enrolledAt = new Date();
+      }
+    }
+    if (dto.adminNotes !== undefined) {
+      data.adminNotes = dto.adminNotes.trim() || null;
+    }
+    if (dto.interviewScheduledAt !== undefined) {
+      if (dto.interviewScheduledAt === null) {
+        data.interviewScheduledAt = null;
+      } else {
+        const at = new Date(dto.interviewScheduledAt);
+        if (Number.isNaN(at.getTime())) {
+          throw new BadRequestException('Invalid interviewScheduledAt');
+        }
+        data.interviewScheduledAt = at;
+      }
+    }
+    if (dto.interviewNotes !== undefined) {
+      data.interviewNotes = dto.interviewNotes.trim() || null;
+    }
+    if (dto.enrolledAt !== undefined) {
+      if (dto.enrolledAt === null) {
+        data.enrolledAt = null;
+      } else {
+        const at = new Date(dto.enrolledAt);
+        if (Number.isNaN(at.getTime())) {
+          throw new BadRequestException('Invalid enrolledAt');
+        }
+        data.enrolledAt = at;
+      }
+    }
+
     return this.prisma.programApplication.update({
       where: { id },
-      data: {
-        ...(dto.status !== undefined ? { status: dto.status } : {}),
-        ...(dto.adminNotes !== undefined
-          ? { adminNotes: dto.adminNotes.trim() || null }
-          : {}),
-      },
-      include: {
-        facultyProgram: {
-          select: { id: true, title: true, description: true, iconKey: true },
-        },
-        attachments: {
-          include: {
-            storedFile: {
-              select: {
-                id: true,
-                originalName: true,
-                mimeType: true,
-                sizeBytes: true,
-                createdAt: true,
-              },
-            },
-          },
-        },
-      },
+      data,
+      include: this.adminInclude(),
     });
   }
 
@@ -167,6 +222,60 @@ export class ProgramApplicationsService {
     for (const storedFileId of storedFileIds) {
       await this.files.removeByStoredFileId(storedFileId).catch(() => undefined);
     }
+  }
+
+  private adminInclude() {
+    return {
+      facultyProgram: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          description: true,
+          iconKey: true,
+        },
+      },
+      attachments: {
+        include: {
+          storedFile: {
+            select: {
+              id: true,
+              originalName: true,
+              mimeType: true,
+              sizeBytes: true,
+              createdAt: true,
+            },
+          },
+        },
+      },
+    } as const;
+  }
+
+  private resolveDocumentTypes(
+    documentTypes: string[] | undefined,
+    fileCount: number,
+  ): (string | null)[] {
+    if (fileCount === 0) {
+      return [];
+    }
+    if (!documentTypes || documentTypes.length === 0) {
+      return Array.from({ length: fileCount }, () => 'other');
+    }
+    if (documentTypes.length !== fileCount) {
+      throw new BadRequestException(
+        'documentTypes must have the same length as uploaded files',
+      );
+    }
+    for (const t of documentTypes) {
+      if (
+        !PROGRAM_APPLICATION_DOCUMENT_TYPES.includes(
+          t as (typeof PROGRAM_APPLICATION_DOCUMENT_TYPES)[number],
+        )
+      ) {
+        throw new BadRequestException(`Invalid document type: ${t}`);
+      }
+    }
+    return documentTypes;
   }
 
   private assertReasonableDob(dob: Date) {

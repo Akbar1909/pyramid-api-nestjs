@@ -27,6 +27,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { parseMaxFileBytes } from '../files/files.constants';
 import { CreateProgramApplicationDto } from './dto/create-program-application.dto';
 import { UpdateProgramApplicationDto } from './dto/update-program-application.dto';
+import { PROGRAM_APPLICATION_DOCUMENT_TYPES } from './program-application-document-types';
 import { ProgramApplicationsService } from './program-applications.service';
 
 @ApiTags('Program applications')
@@ -39,19 +40,37 @@ export class ProgramApplicationsController {
   @ApiOperation({
     summary: 'Submit an application (public)',
     description:
-      'Multipart body: text fields (`firstName`, `lastName`, `email`, `dateOfBirth`, `citizenship`, optional `facultyProgramId`) plus zero or more `files` (PDF only).',
+      'Multipart body: personal fields, optional `facultyProgramId`, `supplementaryAnswers` (JSON string), `documentTypes` (JSON array aligned with `files`), plus zero or more PDF `files`.',
   })
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['firstName', 'lastName', 'email', 'dateOfBirth', 'citizenship'],
+      required: [
+        'firstName',
+        'lastName',
+        'email',
+        'phone',
+        'dateOfBirth',
+        'citizenship',
+        'preferredStartDate',
+      ],
       properties: {
         firstName: { type: 'string' },
         lastName: { type: 'string' },
         email: { type: 'string' },
+        phone: { type: 'string' },
         dateOfBirth: { type: 'string', format: 'date' },
         citizenship: { type: 'string', enum: ['CA', 'US', 'UK', 'INT'] },
+        preferredStartDate: { type: 'string', format: 'date' },
         facultyProgramId: { type: 'string' },
+        supplementaryAnswers: {
+          type: 'string',
+          description: 'JSON object, e.g. {"whyProgram":"…"}',
+        },
+        documentTypes: {
+          type: 'string',
+          description: `JSON array aligned with files, e.g. ["transcript","government_id"]. Allowed: ${PROGRAM_APPLICATION_DOCUMENT_TYPES.join(', ')}`,
+        },
         files: { type: 'array', items: { type: 'string', format: 'binary' } },
       },
     },
@@ -70,6 +89,16 @@ export class ProgramApplicationsController {
     @UploadedFiles() files: Express.Multer.File[] | undefined,
   ) {
     return this.applications.create(dto, files ?? []);
+  }
+
+  @Get('track/:token')
+  @ApiOperation({
+    summary: 'Track application status (public)',
+    description:
+      'Returns status and program info for the `trackingToken` returned when the application was submitted.',
+  })
+  track(@Param('token') token: string) {
+    return this.applications.findByTrackingToken(token);
   }
 
   @Get()
@@ -96,7 +125,8 @@ export class ProgramApplicationsController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: 'Update program application (admin)',
-    description: 'Typically used to set `status` or internal `adminNotes`.',
+    description:
+      'Set `status`, `adminNotes`, interview fields, or `enrolledAt`. Setting status to `ENROLLED` auto-fills `enrolledAt` when omitted.',
   })
   update(@Param('id') id: string, @Body() dto: UpdateProgramApplicationDto) {
     return this.applications.update(id, dto);

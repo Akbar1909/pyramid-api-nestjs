@@ -38,7 +38,10 @@ model User {
 enum ProgramApplicationStatus {
   SUBMITTED
   UNDER_REVIEW
+  INTERVIEW_SCHEDULED
+  OFFER_SENT
   ACCEPTED
+  ENROLLED
   DECLINED
   WITHDRAWN
 
@@ -61,6 +64,7 @@ model StoredFile {
   newsThumbnails  News[]  @relation("NewsThumbnail")
   careerQuizQuestionImages CareerQuizQuestion[] @relation("CareerQuizQuestionImage")
   programApplicationAttachments ProgramApplicationAttachment[]
+  facultyProgramHeroImages FacultyProgram[] @relation("FacultyProgramHeroImage")
 
   @@map("stored_files")
 }
@@ -230,40 +234,67 @@ model CareerQuizOption {
   @@map("career_quiz_options")
 }
 
+/// Site-wide admissions page copy (singleton row, id = `site`).
+model AdmissionsContent {
+  id                  String   @id @default("site") @map("id")
+  introHtml           String?  @map("intro_html") @db.Text
+  generalRequirements Json     @default("[]") @map("general_requirements")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("admissions_content")
+}
+
 /// Homepage “Our Specialized Faculty” cards (admin-managed).
 model FacultyProgram {
-  id          String   @id @default(cuid()) @map("id")
-  title       String   @map("title")
+  id                    String   @id @default(cuid()) @map("id")
+  title                 String   @map("title")
+  slug                  String?  @unique @map("slug")
   /// Short plain summary for homepage cards.
-  description String   @map("description") @db.Text
+  description           String   @map("description") @db.Text
   /// Optional rich HTML (TipTap) for longer faculty / program detail.
-  body        String?  @map("body") @db.Text
+  body                  String?  @map("body") @db.Text
   /// Preset used by the public site to render a gold icon (e.g. cardiac, cardiology).
-  iconKey     String   @map("icon_key") @db.VarChar(64)
-  sortOrder   Int      @default(0) @map("sort_order")
-  isPublished Boolean  @default(true) @map("is_published")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  applications ProgramApplication[]
+  iconKey               String   @map("icon_key") @db.VarChar(64)
+  /// Hero photo for program cards and detail pages (`StoredFile` id from POST /files/upload).
+  imageFileId           String?  @map("image_file_id")
+  imageFile             StoredFile? @relation("FacultyProgramHeroImage", fields: [imageFileId], references: [id], onDelete: SetNull)
+  duration              String?  @map("duration")
+  credentialType        String?  @map("credential_type") @db.VarChar(64)
+  format                String?  @map("format")
+  practicumHours        Int?     @map("practicum_hours")
+  admissionRequirements Json?    @map("admission_requirements")
+  clinicalRequirements  Json?    @map("clinical_requirements")
+  sortOrder             Int      @default(0) @map("sort_order")
+  isPublished           Boolean  @default(true) @map("is_published")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  applications          ProgramApplication[]
 
   @@index([isPublished, sortOrder])
   @@map("faculty_programs")
 }
 
 model ProgramApplication {
-  id               String                     @id @default(cuid()) @map("id")
-  firstName        String                     @map("first_name")
-  lastName         String                     @map("last_name")
-  email            String                     @map("email")
-  dateOfBirth      DateTime                   @map("date_of_birth")
-  citizenship      String                     @map("citizenship") @db.VarChar(32)
-  facultyProgramId String?                    @map("faculty_program_id")
-  facultyProgram   FacultyProgram?          @relation(fields: [facultyProgramId], references: [id], onDelete: SetNull)
-  status           ProgramApplicationStatus   @default(SUBMITTED) @map("status")
-  adminNotes       String?                    @map("admin_notes") @db.Text
-  createdAt        DateTime                   @default(now()) @map("created_at")
-  updatedAt        DateTime                   @updatedAt @map("updated_at")
-  attachments      ProgramApplicationAttachment[]
+  id                   String                     @id @default(cuid()) @map("id")
+  firstName            String                     @map("first_name")
+  lastName             String                     @map("last_name")
+  email                String                     @map("email")
+  phone                String                     @map("phone")
+  dateOfBirth          DateTime                   @map("date_of_birth")
+  citizenship          String                     @map("citizenship") @db.VarChar(32)
+  preferredStartDate   DateTime?                  @map("preferred_start_date")
+  supplementaryAnswers Json?                      @map("supplementary_answers")
+  facultyProgramId     String?                    @map("faculty_program_id")
+  facultyProgram       FacultyProgram?            @relation(fields: [facultyProgramId], references: [id], onDelete: SetNull)
+  status               ProgramApplicationStatus   @default(SUBMITTED) @map("status")
+  adminNotes           String?                    @map("admin_notes") @db.Text
+  interviewScheduledAt DateTime?                  @map("interview_scheduled_at")
+  interviewNotes       String?                    @map("interview_notes") @db.Text
+  enrolledAt           DateTime?                  @map("enrolled_at")
+  trackingToken        String                     @unique @map("tracking_token")
+  createdAt            DateTime                   @default(now()) @map("created_at")
+  updatedAt            DateTime                   @updatedAt @map("updated_at")
+  attachments          ProgramApplicationAttachment[]
 
   @@index([status])
   @@index([createdAt])
@@ -277,6 +308,7 @@ model ProgramApplicationAttachment {
   application    ProgramApplication  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   storedFileId   String              @map("stored_file_id")
   storedFile     StoredFile          @relation(fields: [storedFileId], references: [id], onDelete: Restrict)
+  documentType   String?             @map("document_type") @db.VarChar(64)
 
   @@index([applicationId])
   @@map("program_application_attachments")

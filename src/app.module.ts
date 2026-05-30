@@ -10,6 +10,7 @@ import { NewsModule } from './news/news.module';
 import { ProfileModule } from './profile/profile.module';
 import { TourBookingsModule } from './tour-bookings/tour-bookings.module';
 import { CareerQuizModule } from './career-quiz/career-quiz.module';
+import { AdmissionsModule } from './admissions/admissions.module';
 import { FacultyProgramsModule } from './faculty-programs/faculty-programs.module';
 import { ProgramApplicationsModule } from './program-applications/program-applications.module';
 
@@ -24,6 +25,7 @@ import { ProgramApplicationsModule } from './program-applications/program-applic
     FilesModule,
     TourBookingsModule,
     CareerQuizModule,
+    AdmissionsModule,
     FacultyProgramsModule,
     ProgramApplicationsModule,
   ],

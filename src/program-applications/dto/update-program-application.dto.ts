@@ -1,6 +1,12 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { ProgramApplicationStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class UpdateProgramApplicationDto {
   @ApiPropertyOptional({ enum: ProgramApplicationStatus })
@@ -15,4 +21,26 @@ export class UpdateProgramApplicationDto {
   @IsString()
   @MaxLength(8000)
   adminNotes?: string;
+
+  @ApiPropertyOptional({
+    description: 'When an interview or entrance assessment is scheduled.',
+  })
+  @IsOptional()
+  @IsDateString()
+  interviewScheduledAt?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Notes from the interview or assessment.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(8000)
+  interviewNotes?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Set when the applicant confirms enrollment.',
+  })
+  @IsOptional()
+  @IsDateString()
+  enrolledAt?: string | null;
 }

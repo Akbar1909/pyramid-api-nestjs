@@ -52,9 +52,9 @@ export class FacultyProgramsController {
   @UseGuards(OptionalJwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
-    summary: 'Get faculty program by id',
+    summary: 'Get faculty program by id or slug',
     description:
-      'No auth: published programs only. Admin JWT: may load unpublished programs.',
+      'Resolves by unique `slug` first, then by `id`. No auth: published only. Admin JWT: may load unpublished programs.',
   })
   findOne(@Param('id') id: string, @OptionalCurrentUser() user?: User) {
     return this.facultyPrograms.findOne(id, user);
