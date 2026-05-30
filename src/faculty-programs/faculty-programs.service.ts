@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, Role, User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateFacultyProgramDto } from './dto/create-faculty-program.dto';
 import { UpdateFacultyProgramDto } from './dto/update-faculty-program.dto';
@@ -7,6 +7,10 @@ import { UpdateFacultyProgramDto } from './dto/update-faculty-program.dto';
 @Injectable()
 export class FacultyProgramsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private isAdmin(user?: User) {
+    return user?.role === Role.ADMIN;
+  }
 
   findPublished() {
     return this.prisma.facultyProgram.findMany({
@@ -21,12 +25,22 @@ export class FacultyProgramsService {
     });
   }
 
-  async findOneAdmin(id: string) {
+  async findOne(id: string, user?: User) {
     const row = await this.prisma.facultyProgram.findUnique({ where: { id } });
     if (!row) {
       throw new NotFoundException();
     }
+    if (this.isAdmin(user)) {
+      return row;
+    }
+    if (!row.isPublished) {
+      throw new NotFoundException();
+    }
     return row;
+  }
+
+  findOneAdmin(id: string) {
+    return this.findOne(id, { role: Role.ADMIN } as User);
   }
 
   create(dto: CreateFacultyProgramDto) {

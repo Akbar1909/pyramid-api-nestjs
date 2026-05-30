@@ -14,9 +14,11 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { Role, User } from '@prisma/client';
+import { OptionalCurrentUser } from '../auth/decorators/optional-current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CreateFacultyProgramDto } from './dto/create-faculty-program.dto';
 import { UpdateFacultyProgramDto } from './dto/update-faculty-program.dto';
@@ -47,12 +49,15 @@ export class FacultyProgramsController {
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Get faculty program by id (admin)' })
-  findOneAdmin(@Param('id') id: string) {
-    return this.facultyPrograms.findOneAdmin(id);
+  @ApiOperation({
+    summary: 'Get faculty program by id',
+    description:
+      'No auth: published programs only. Admin JWT: may load unpublished programs.',
+  })
+  findOne(@Param('id') id: string, @OptionalCurrentUser() user?: User) {
+    return this.facultyPrograms.findOne(id, user);
   }
 
   @Post()
