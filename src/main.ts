@@ -5,11 +5,10 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { FilesService } from './files/files.service';
 
-function parseCorsOrigins(): string[] | boolean {
+function parseCorsOrigins(): string[] | boolean | RegExp {
   const raw = process.env.FRONTEND_ORIGIN?.trim();
   if (!raw) {
     return [
-      // `pyramid-app-next` public site (see package.json `next dev -p 3002`)
       'http://localhost:3002',
       'http://127.0.0.1:3002',
       'http://localhost:4000',
@@ -20,6 +19,9 @@ function parseCorsOrigins(): string[] | boolean {
   }
   if (raw === '*') {
     return true;
+  }
+  if (raw === 'canadiancollegepyramid.com') {
+    return /^https?:\/\/(.*\.)?canadiancollegepyramid\.com$/;
   }
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
