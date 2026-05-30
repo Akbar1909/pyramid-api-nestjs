@@ -46,10 +46,15 @@ export class ProgramApplicationsService {
     if (dto.facultyProgramId) {
       const fp = await this.prisma.facultyProgram.findFirst({
         where: { id: dto.facultyProgramId, isPublished: true },
-        select: { id: true },
+        select: { id: true, acceptingApplications: true },
       });
       if (!fp) {
         throw new BadRequestException('Invalid or unpublished faculty program');
+      }
+      if (!fp.acceptingApplications) {
+        throw new BadRequestException(
+          'This program is not accepting applications yet',
+        );
       }
       facultyProgramId = fp.id;
     }

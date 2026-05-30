@@ -15,6 +15,8 @@ function parseCorsOrigins(): string[] | boolean | RegExp {
       'http://127.0.0.1:4000',
       'http://localhost:4001',
       'http://127.0.0.1:4001',
+      'http://localhost:3401',
+      'http://127.0.0.1:3401',
     ];
   }
   if (raw === '*') {
@@ -23,7 +25,10 @@ function parseCorsOrigins(): string[] | boolean | RegExp {
   if (raw === 'canadiancollegepyramid.com') {
     return /^https?:\/\/(.*\.)?canadiancollegepyramid\.com$/;
   }
-  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 async function bootstrap() {

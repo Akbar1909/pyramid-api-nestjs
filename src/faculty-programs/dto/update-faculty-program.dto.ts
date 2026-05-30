@@ -98,4 +98,9 @@ export class UpdateFacultyProgramDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  acceptingApplications?: boolean;
 }

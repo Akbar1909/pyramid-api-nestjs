@@ -94,6 +94,7 @@ export class FacultyProgramsService {
           clinicalRequirements: dto.clinicalRequirements ?? undefined,
           sortOrder: dto.sortOrder ?? 0,
           isPublished: dto.isPublished ?? true,
+          acceptingApplications: dto.acceptingApplications ?? true,
         },
         include: includePublic,
       });
@@ -197,6 +198,9 @@ export class FacultyProgramsService {
     }
     if (dto.isPublished !== undefined) {
       data.isPublished = dto.isPublished;
+    }
+    if (dto.acceptingApplications !== undefined) {
+      data.acceptingApplications = dto.acceptingApplications;
     }
     return data;
   }

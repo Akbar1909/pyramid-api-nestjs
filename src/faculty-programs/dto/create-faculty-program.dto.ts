@@ -110,4 +110,13 @@ export class CreateFacultyProgramDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @ApiPropertyOptional({
+    default: true,
+    description:
+      'When false, the website should show “Coming soon” and block new applications for this program.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  acceptingApplications?: boolean;
 }

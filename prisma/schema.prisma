@@ -266,6 +266,8 @@ model FacultyProgram {
   clinicalRequirements  Json?    @map("clinical_requirements")
   sortOrder             Int      @default(0) @map("sort_order")
   isPublished           Boolean  @default(true) @map("is_published")
+  /// When false, the public site should show “Coming soon” and reject new applications.
+  acceptingApplications Boolean  @default(true) @map("accepting_applications")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
   applications          ProgramApplication[]
