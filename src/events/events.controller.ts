@@ -22,7 +22,9 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CreateEventDto } from './dto/create-event.dto';
+import { RegisterForEventDto } from './dto/register-for-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import { UpdateEventRegistrationDto } from './dto/update-event-registration.dto';
 import { EventsService } from './events.service';
 
 @ApiTags('Events')
@@ -40,6 +42,25 @@ export class EventsController {
   })
   findAll(@OptionalCurrentUser() user?: User) {
     return this.events.findAll(user);
+  }
+
+  @Post(':id/register')
+  @ApiOperation({
+    summary: 'Register for an event (public)',
+    description:
+      'No authentication. Requires a published event with registration enabled that has not started yet.',
+  })
+  register(@Param('id') id: string, @Body() dto: RegisterForEventDto) {
+    return this.events.register(id, dto);
+  }
+
+  @Get(':id/registrations')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'List registrations for an event (admin)' })
+  findRegistrations(@Param('id') id: string) {
+    return this.events.findRegistrations(id);
   }
 
   @Get(':id')
@@ -61,6 +82,31 @@ export class EventsController {
   @ApiOperation({ summary: 'Create event (admin)' })
   create(@CurrentUser() user: User, @Body() dto: CreateEventDto) {
     return this.events.create(user, dto);
+  }
+
+  @Patch('registrations/:registrationId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Update event registration (admin)',
+    description: 'Typically used to set status to CANCELLED.',
+  })
+  updateRegistration(
+    @Param('registrationId') registrationId: string,
+    @Body() dto: UpdateEventRegistrationDto,
+  ) {
+    return this.events.updateRegistration(registrationId, dto);
+  }
+
+  @Delete('registrations/:registrationId')
+  @HttpCode(204)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Delete event registration (admin)' })
+  async removeRegistration(@Param('registrationId') registrationId: string) {
+    await this.events.removeRegistration(registrationId);
   }
 
   @Patch(':id')

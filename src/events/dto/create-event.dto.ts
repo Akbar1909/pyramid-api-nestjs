@@ -1,11 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsDateString,
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator';
+import { EventFormat } from '@prisma/client';
 
 export class CreateEventDto {
   @ApiProperty({ example: 'Open house' })
@@ -34,11 +37,31 @@ export class CreateEventDto {
   @IsDateString()
   endsAt?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    enum: EventFormat,
+    default: EventFormat.OFFLINE,
+    description: 'ONLINE = virtual, OFFLINE = in person, HYBRID = both.',
+  })
+  @IsOptional()
+  @IsEnum(EventFormat)
+  format?: EventFormat;
+
+  @ApiPropertyOptional({
+    description:
+      'Physical address/room for offline events, meeting link for online, or both for hybrid.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500)
   location?: string;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'When false, the public register button should be hidden.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  registrationEnabled?: boolean;
 
   @ApiPropertyOptional({
     description:

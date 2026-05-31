@@ -4,11 +4,18 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role, User } from '@prisma/client';
+import {
+  EventRegistrationStatus,
+  Prisma,
+  Role,
+  User,
+} from '@prisma/client';
 import { requireImageStoredFileId } from '../files/require-image-stored-file';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
+import { RegisterForEventDto } from './dto/register-for-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import { UpdateEventRegistrationDto } from './dto/update-event-registration.dto';
 
 const authorSelect = { id: true, email: true, role: true } as const;
 const thumbnailSelect = {
@@ -17,6 +24,18 @@ const thumbnailSelect = {
   mimeType: true,
   filename: true,
   originalName: true,
+} as const;
+
+const eventInclude = {
+  author: { select: authorSelect },
+  thumbnail: { select: thumbnailSelect },
+  _count: {
+    select: {
+      registrations: {
+        where: { status: EventRegistrationStatus.REGISTERED },
+      },
+    },
+  },
 } as const;
 
 @Injectable()
@@ -39,20 +58,14 @@ export class EventsService {
     return this.prisma.event.findMany({
       where,
       orderBy: { startsAt: 'desc' },
-      include: {
-        author: { select: authorSelect },
-        thumbnail: { select: thumbnailSelect },
-      },
+      include: eventInclude,
     });
   }
 
   async findOne(id: string, user?: User) {
     const row = await this.prisma.event.findUnique({
       where: { id },
-      include: {
-        author: { select: authorSelect },
-        thumbnail: { select: thumbnailSelect },
-      },
+      include: eventInclude,
     });
     if (!row) {
       throw new NotFoundException();
@@ -77,17 +90,14 @@ export class EventsService {
           body: dto.body,
           startsAt: new Date(dto.startsAt),
           endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
+          format: dto.format,
           location: dto.location?.trim() || undefined,
+          registrationEnabled: dto.registrationEnabled ?? true,
           publishedAt: dto.publishedAt ? new Date(dto.publishedAt) : undefined,
           author: { connect: { id: author.id } },
-          ...(thumbId
-            ? { thumbnail: { connect: { id: thumbId } } }
-            : {}),
+          ...(thumbId ? { thumbnail: { connect: { id: thumbId } } } : {}),
         },
-        include: {
-          author: { select: authorSelect },
-          thumbnail: { select: thumbnailSelect },
-        },
+        include: eventInclude,
       });
     } catch (e) {
       this.rethrowUnique(e);
@@ -101,10 +111,7 @@ export class EventsService {
       return await this.prisma.event.update({
         where: { id },
         data,
-        include: {
-          author: { select: authorSelect },
-          thumbnail: { select: thumbnailSelect },
-        },
+        include: eventInclude,
       });
     } catch (e) {
       this.rethrowUnique(e);
@@ -114,6 +121,108 @@ export class EventsService {
   async remove(id: string) {
     await this.ensureExists(id);
     await this.prisma.event.delete({ where: { id } });
+  }
+
+  async register(eventId: string, dto: RegisterForEventDto) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: {
+        id: true,
+        title: true,
+        startsAt: true,
+        publishedAt: true,
+        registrationEnabled: true,
+      },
+    });
+    if (!event) {
+      throw new NotFoundException();
+    }
+    this.assertRegisterable(event);
+
+    try {
+      const row = await this.prisma.eventRegistration.create({
+        data: {
+          eventId: event.id,
+          fullName: dto.fullName.trim(),
+          email: dto.email.trim().toLowerCase(),
+          phone: dto.phone.trim(),
+        },
+      });
+      return {
+        id: row.id,
+        createdAt: row.createdAt,
+        message: 'Registration received',
+      };
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        throw new ConflictException('You are already registered for this event');
+      }
+      throw e;
+    }
+  }
+
+  async findRegistrations(eventId: string) {
+    await this.ensureExists(eventId);
+    return this.prisma.eventRegistration.findMany({
+      where: { eventId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async updateRegistration(id: string, dto: UpdateEventRegistrationDto) {
+    if (dto.status === undefined) {
+      throw new BadRequestException('Provide status to update');
+    }
+    try {
+      return await this.prisma.eventRegistration.update({
+        where: { id },
+        data: { status: dto.status },
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException();
+      }
+      throw e;
+    }
+  }
+
+  async removeRegistration(id: string) {
+    try {
+      await this.prisma.eventRegistration.delete({ where: { id } });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2025'
+      ) {
+        throw new NotFoundException();
+      }
+      throw e;
+    }
+  }
+
+  private assertRegisterable(event: {
+    publishedAt: Date | null;
+    registrationEnabled: boolean;
+    startsAt: Date;
+  }) {
+    const now = new Date();
+    if (!event.publishedAt || event.publishedAt > now) {
+      throw new NotFoundException();
+    }
+    if (!event.registrationEnabled) {
+      throw new BadRequestException('Registration is not open for this event');
+    }
+    if (event.startsAt.getTime() <= now.getTime()) {
+      throw new BadRequestException(
+        'Registration is closed for events that have already started',
+      );
+    }
   }
 
   private async ensureExists(id: string) {
@@ -147,8 +256,14 @@ export class EventsService {
     if (rest.endsAt !== undefined) {
       data.endsAt = rest.endsAt ? new Date(rest.endsAt) : null;
     }
+    if (rest.format !== undefined) {
+      data.format = rest.format;
+    }
     if (rest.location !== undefined) {
       data.location = rest.location?.trim() || null;
+    }
+    if (rest.registrationEnabled !== undefined) {
+      data.registrationEnabled = rest.registrationEnabled;
     }
 
     if (rest.publishedAt !== undefined) {

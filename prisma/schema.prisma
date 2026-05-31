@@ -70,24 +70,62 @@ model StoredFile {
 }
 
 /// Campus / academic calendar events (admin-managed).
+enum EventFormat {
+  ONLINE
+  OFFLINE
+  HYBRID
+
+  @@map("event_format")
+}
+
+enum EventRegistrationStatus {
+  REGISTERED
+  CANCELLED
+
+  @@map("event_registration_status")
+}
+
+/// Campus / academic calendar events (admin-managed).
 model Event {
-  id          String    @id @default(cuid()) @map("id")
-  title       String    @map("title")
-  slug        String?   @unique @map("slug")
-  body        String    @map("body") @db.Text
-  startsAt    DateTime  @map("starts_at")
-  endsAt      DateTime? @map("ends_at")
-  location    String?   @map("location")
+  id                   String    @id @default(cuid()) @map("id")
+  title                String    @map("title")
+  slug                 String?   @unique @map("slug")
+  body                 String    @map("body") @db.Text
+  startsAt             DateTime  @map("starts_at")
+  endsAt               DateTime? @map("ends_at")
+  format               EventFormat @default(OFFLINE) @map("format")
+  /// Physical address, room, and/or online meeting link depending on `format`.
+  location             String?   @map("location")
+  registrationEnabled  Boolean   @default(true) @map("registration_enabled")
   /// When set and not in the future, the event is visible to anonymous list/detail.
-  publishedAt DateTime? @map("published_at")
-  authorId    String    @map("author_id")
-  author      User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
-  thumbnailId String?   @map("thumbnail_id")
-  thumbnail   StoredFile? @relation("EventThumbnail", fields: [thumbnailId], references: [id], onDelete: SetNull)
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  publishedAt          DateTime? @map("published_at")
+  authorId             String    @map("author_id")
+  author               User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  thumbnailId          String?   @map("thumbnail_id")
+  thumbnail            StoredFile? @relation("EventThumbnail", fields: [thumbnailId], references: [id], onDelete: SetNull)
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  registrations        EventRegistration[]
 
   @@map("events")
+}
+
+model EventRegistration {
+  id        String                  @id @default(cuid()) @map("id")
+  eventId   String                  @map("event_id")
+  event     Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  fullName  String                  @map("full_name")
+  email     String                  @map("email")
+  phone     String                  @map("phone")
+  status    EventRegistrationStatus @default(REGISTERED) @map("status")
+  createdAt DateTime                @default(now()) @map("created_at")
+  updatedAt DateTime                @updatedAt @map("updated_at")
+
+  @@unique([eventId, email])
+  @@index([eventId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("event_registrations")
 }
 
 /// News articles (admin-managed).
